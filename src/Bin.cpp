@@ -45,6 +45,13 @@ void Bin::Writer::flush()
 			case Type::VECTOR:
 				infoIndex = flushVector(os, infoIndex + 1, info.size);
 				break;
+			case Type::STRING:
+			{
+				std::string* str = reinterpret_cast<std::string*>(info.ptr);
+				os.write(str->data(), info.size);
+				infoIndex++;
+				break;
+			}
 			default:
 				os.write(info.ptr, info.size);
 				infoIndex++;
@@ -59,10 +66,20 @@ size_t Bin::Writer::flushVector(std::ofstream& os, size_t nextIndex, size_t size
 	TypeInfo& next = header_.at(nextIndex);
 
 	if (next.type == Type::VECTOR)
-	{
 		return flushVector(os, nextIndex + 1, next.size);
+	else if (next.type == Type::STRING)
+	{
+		for (size_t i = 0; i < size; i++)
+		{
+			next = header_.at(nextIndex + i);
+			std::string* str = reinterpret_cast<std::string*>(next.ptr);
+			os.write(str->c_str(), next.size);
+		}
+		return nextIndex + size;
 	}
+
 	os.write(next.ptr, size * next.size);
+
 	return nextIndex + 1;
 }
 
@@ -92,6 +109,12 @@ void Bin::Parser::read(char* ptr)
 	{
 		infoIndex = readVector(ptr, infoIndex + 1, info.size);
 	}
+	else if (info.type == Type::STRING)
+	{
+		std::string* str = reinterpret_cast<std::string*>(ptr);
+		str->resize(info.size, '\0');
+		is.read(str->data(), info.size);
+	}
 	else
 	{
 		is.read(ptr, info.size);
@@ -102,11 +125,11 @@ void Bin::Parser::read(char* ptr)
 size_t Bin::Parser::readVector(char* ptr, size_t nextIndex, size_t size)
 {
 	TypeInfo& next = header.at(nextIndex);
-	
-	while((next.type & Type::END) == Type::END)
+
+	while ((next.type & Type::END) == Type::END)
 	{
 		nextIndex++;
-		if(nextIndex >= header.size())
+		if (nextIndex >= header.size())
 			return nextIndex;
 		next = header.at(nextIndex);
 	}
@@ -121,6 +144,20 @@ size_t Bin::Parser::readVector(char* ptr, size_t nextIndex, size_t size)
 			nextIndex = readVector(reinterpret_cast<char*>(&vec->at(i)), nextIndex + 1, header.at(nextIndex).size);
 		}
 		return nextIndex + 1;
+	}
+	else if (next.type == Type::STRING) // vector of strings
+	{
+		std::vector<std::string>* vec = reinterpret_cast<std::vector<std::string>*>(ptr);
+		vec->resize(size);
+
+		for (size_t i = 0; i < size; i++)
+		{
+			next = header.at(nextIndex + i);
+			vec->at(i) = std::string(next.size, '\0');
+			is.read(vec->at(i).data(), next.size);
+		}
+
+		return nextIndex + size;
 	}
 	else
 	{

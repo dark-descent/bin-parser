@@ -20,6 +20,7 @@ namespace Bin
 		PRIMITIVES_SIZE,
 		VECTOR,
 		STRING,
+		STRUCT,
 		END = 0x10Ui64
 	};
 
@@ -59,17 +60,33 @@ namespace Bin
 		template<typename T>
 		Writer& write(std::vector<T>& vector)
 		{
-			header_.push_back(TypeInfo(Type::VECTOR, vector.size()));
+			const size_t vectorSize = vector.size();
+			header_.push_back(TypeInfo(Type::VECTOR, vectorSize));
 			if constexpr (is_specialization<T, std::vector>::value)
 			{
-				for (size_t i = 0; i < vector.size(); i++)
+				for (size_t i = 0; i < vectorSize; i++)
 					write<T::value_type>(vector[i]);
+			}
+			else if constexpr (std::is_same<T, std::string>::value)
+			{
+				for (size_t i = 0; i < vectorSize; i++)
+				{
+					std::string& str = vector.at(i);
+					header_.push_back(TypeInfo(Type::STRING, str.length(), str.data()));
+				}
 			}
 			else
 			{
 				write(*vector.data());
 			}
 			header_.push_back(TypeInfo(Type::VECTOR | Type::END, 0));
+			return *this;
+		}
+
+		Writer& write(std::string& str)
+		{
+			printf("write string\n");
+			header_.push_back(TypeInfo(Type::STRING, str.length(), reinterpret_cast<char*>(std::addressof(str))));
 			return *this;
 		}
 
@@ -120,6 +137,10 @@ namespace Bin
 			{
 				addPrimitiveType(Type::BOOL, reinterpret_cast<char*>(std::addressof(value)));
 			}
+			else
+			{
+				header_.push_back(TypeInfo(Type::STRUCT, sizeof(T), reinterpret_cast<char*>(std::addressof(value))));
+			}
 			return *this;
 		}
 
@@ -149,9 +170,9 @@ namespace Bin
 
 	public:
 		template<typename T>
-		void read(T* data)
+		void read(T& data)
 		{
-			read(reinterpret_cast<char*>(data));
+			read(reinterpret_cast<char*>(std::addressof(data)));
 		}
 	};
 
